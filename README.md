@@ -85,6 +85,29 @@ riscv32imc 没有原生 CAS，所以这个 crate 给 `portable-atomic` 开了
 上的做法一致；注意不能同时开 `critical-section`）。ESP32-C3 是单核，
 符合；多核芯片上不要开 `tls`。
 
+## 固件体积（实测）
+
+量法：`readelf -l` 取 ELF 里所有 LOAD 段的 FileSiz 求和，
+即实际写进 Flash 的字节数，**不是 ELF 文件大小**（带调试信息的
+ELF 有十几 MB）。2026-11-07 在 InstaBox 免费机（Rust 1.99.1，
+`riscv32imc-unknown-none-elf`，release）上实测：
+
+| 例程 | Flash | 占 1 MB factory 分区 | 剩余 |
+| --- | --- | --- | --- |
+| `post_json`（HTTP） | 460,542 B（449.7 KiB） | 43.9% | 574.3 KiB |
+| `post_json_tls`（HTTPS） | 750,500 B（732.9 KiB） | 71.6% | 291.1 KiB |
+
+TLS 比 HTTP 大 289,958 B（约 283 KiB，+63%），主要是 `.text`
+多了约 275 KiB（embedded-tls + rustpki + RSA/P-384）和 `.rodata`
+多了约 14 KiB。两个版本都放得进 1 MB 的 factory 分区，
+TLS 版还剩约 291 KiB，不用把 RSA/P-384 拆成可选 feature。
+
+静态 RAM 两个版本几乎一样，都是约 282 KiB（.bss+.data 约 148 KiB，
+含 128 KiB 静态堆；栈约 128 KiB），400 KiB SRAM 还剩约 118 KiB。
+TLS 的两个 8 KiB 记录缓冲是栈上分配的，不占 .bss。
+注意：握手时的运行时堆占用（证书解析、握手状态）比 HTTP 高，
+静态编译量不出来，真机跑的时候再看。
+
 ## 为什么是 embedded-tls，而不是 rustls
 
 - rustls 默认的 `ring` 后端只支持 **64 位 RISC-V**，

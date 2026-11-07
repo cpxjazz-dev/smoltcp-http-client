@@ -76,6 +76,11 @@ esp-println = { version = "0.17.0", features = ["esp32c3"] }
 esp-radio = { version = "0.18.0", features = ["esp-alloc", "esp32c3", "unstable", "wifi"] }
 esp-rtos = { version = "0.3.0", features = ["esp-alloc", "esp-radio", "esp32c3"] }
 embassy-futures = "0.1"
+# post_json_tls.rs 的 HwRng 要给 embedded-tls 0.19（rand_core 0.6）
+# 用的 CryptoRngCore 实现 RngCore + CryptoRng：esp-hal 的 Rng 只
+# 实现了 RngCore，没实现 CryptoRng，所以例程里包了一层 newtype。
+# 注意版本：embedded-tls 0.19 用 rand_core 0.6，不是 0.9。
+rand_core = { version = "0.6", default-features = false }
 # example 里的 Net 还要 DHCP，补上这两个 feature（和主依赖合并）。
 smoltcp = { version = "0.13", default-features = false, features = [
     "medium-ethernet",

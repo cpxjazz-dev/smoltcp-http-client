@@ -137,6 +137,10 @@ v0.1.0 明确不支持的：
 - Rust 1.91+、edition 2024
 - example 的 ESP 部分：esp-hal ~1.1 / esp-radio 0.18 / esp-rtos 0.3
   （和 `esp32-pir-template` 同一套基线，成套升级）
+- 2026-11-07：`.cargo/config.toml` 补 `"-C", "link-arg=-Tlinkall.x"`
+  （esp-hal 的标准链接参数，缺了它裸 `cargo build` 会在链接阶段报
+  20 个 undefined symbol）；已在 InstaBox 免费机（Rust 1.99.1）上
+  验证裸 `cargo build --examples` 一次通过。
 
 ## License
 

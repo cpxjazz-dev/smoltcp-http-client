@@ -1,0 +1,96 @@
+[package]
+name = "smoltcp-http-client"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+description = "Blocking no_std HTTP/HTTPS client over raw smoltcp (ESP32-C3 / embedded Rust)"
+license = "MIT OR Apache-2.0"
+# 注意：仓库还没建。发 crates.io 之前先在 GitHub 上建
+# https://github.com/cpxjazz-dev/smoltcp-http-client 这个空仓库。
+repository = "https://github.com/cpxjazz-dev/smoltcp-http-client"
+keywords = ["http", "smoltcp", "no-std", "embedded", "esp32"]
+categories = ["embedded", "network-programming"]
+readme = "README.md"
+
+[dependencies]
+# 只依赖 smoltcp 本体，不依赖任何 ESP 的包：
+# 传输层由调用方通过 TcpTransport trait 注入，
+# 所以这个 crate 在任何能跑 smoltcp 的 no_std 芯片上都能用。
+smoltcp = { version = "0.13", default-features = false, features = [
+    "medium-ethernet",
+    "proto-ipv4",
+    "socket-tcp",
+] }
+# TLS（feature = "tls"）：纯 Rust 的 embedded-tls 阻塞模式，
+# 不需要 ring / C 编译器，能在 riscv32 上编译。
+embedded-io = { version = "0.7", optional = true }
+embedded-tls = { version = "0.19", default-features = false, features = [
+    # 注意：0.19 没有 "blocking" feature（0.19.0 的 Cargo.toml 里
+    # 根本没有这一项，blocking 模块是无条件编译的）。
+    # 之前写了 "blocking" 会导致 cargo 解析直接失败。
+    "rustpki",
+    # RSA / P-384 签名验证：公网证书链（比如 Let's Encrypt）常用
+    # RSA 签名，没有这两个 feature 很多公网站点的证书验不过。
+    # 代价是 flash 变大，README 里写了。
+    "rsa",
+    "p384",
+], optional = true }
+
+# riscv32imc 没有 A 扩展、没有原生原子 CAS：embedded-tls 的 rsa 路线
+# 经 rsa → num-bigint-dig → lazy_static → spin 0.9 用到
+# portable-atomic 的 AtomicU8::compare_exchange，默认不开 fallback
+# 时 spin 在 riscv32 上编不过（E0599）。这里给 portable-atomic 开
+# unsafe-assume-single-core，用关中断实现 CAS；和 esp-hal 在
+# ESP32-C3 上的做法一致（esp-hal 也开这个 feature，不会冲突；
+# 注意不能同时开 critical-section，portable-atomic 会直接报错）。
+# 代价：tls feature 假定单核目标（ESP32-C3 是单核，符合；
+# 多核芯片上不要开 tls）。本 crate 不直接用 portable-atomic，
+# 这个依赖只用来给传递依赖开 feature。
+portable-atomic = { version = "1", default-features = false, features = [
+    "unsafe-assume-single-core",
+], optional = true }
+
+# spin 也要开 portable_atomic：spin 0.9 默认用 core::sync::atomic，
+# 但 riscv32imc 的 core 原子类型没有 compare_exchange（无 A 扩展），
+# spin::Once 在 riscv32 上编不过（E0599）。开 spin 的 portable_atomic
+# feature 后它改用 portable-atomic::Atomic<u8>，再配合上面
+# portable-atomic 的 unsafe-assume-single-core，就有了 CAS。
+# 本 crate 不直接用 spin，这个依赖只用来给传递依赖开 feature。
+spin = { version = "0.9", default-features = false, features = [
+    "once",
+    "portable_atomic",
+], optional = true }
+
+[features]
+default = []
+tls = ["dep:embedded-tls", "dep:embedded-io", "dep:portable-atomic", "dep:spin"]
+
+[dev-dependencies]
+# 只有 examples/post_json.rs 需要 ESP 的包（主库不需要）。
+# 版本和 esp32-pir-template 的基线一致，成套升级。
+esp-hal = { version = "~1.1.0", features = ["esp32c3", "unstable"] }
+esp-alloc = "0.10.0"
+esp-backtrace = { version = "0.19.0", features = ["esp32c3", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["esp32c3"] }
+esp-println = { version = "0.17.0", features = ["esp32c3"] }
+esp-radio = { version = "0.18.0", features = ["esp-alloc", "esp32c3", "unstable", "wifi"] }
+esp-rtos = { version = "0.3.0", features = ["esp-alloc", "esp-radio", "esp32c3"] }
+embassy-futures = "0.1"
+# example 里的 Net 还要 DHCP，补上这两个 feature（和主依赖合并）。
+smoltcp = { version = "0.13", default-features = false, features = [
+    "medium-ethernet",
+    "proto-ipv4",
+    "proto-dhcpv4",
+    "socket-tcp",
+    "socket-dhcpv4",
+] }
+
+[profile.dev]
+# 调试档默认太慢太大，嵌入式上总要开一点优化
+opt-level = "s"
+
+[profile.release]
+codegen-units = 1
+debug = 2
+lto = "fat"
+opt-level = "s"
